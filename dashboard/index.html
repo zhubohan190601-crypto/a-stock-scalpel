@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>阿不确定 · 看板</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+  .container { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+  h1 { font-size: 20px; font-weight: 600; }
+  h1 small { font-size: 13px; color: #8b949e; font-weight: 400; margin-left: 8px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--accent); color: #fff; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card h2 { font-size: 14px; color: #8b949e; margin-bottom: 8px; font-weight: 500; }
+  .card .value { font-size: 28px; font-weight: 700; }
+  .card .sub { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .green { color: var(--green); }
+  .red { color: var(--red); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 6px; color: #8b949e; font-weight: 500; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--border); }
+  .section { margin-bottom: 24px; }
+  .section h2 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .up { color: var(--red); } .down { color: var(--green); }
+  .mt-4 { margin-top: 16px; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>阿不 · 看板 <small>阿不 & 贝哥</small></h1>
+  <span class="badge" id="live-badge">等待数据</span>
+</header>
+
+<div class="grid">
+  <div class="card">
+    <h2>Token 余额</h2>
+    <div class="value" id="token-balance">—</div>
+    <div class="sub" id="token-consumed">已消耗: —</div>
+  </div>
+  <div class="card">
+    <h2>最后更新</h2>
+    <div class="value" id="last-update" style="font-size:18px">—</div>
+    <div class="sub" id="next-update">下一个定时任务: 交易日15:30</div>
+  </div>
+</div>
+
+<div class="section" id="market-brief-section">
+  <h2>📊 今日市场简报</h2>
+  <div id="market-content"><p style="color:#8b949e">收盘后自动更新...</p></div>
+</div>
+
+<div class="section" id="screening-section">
+  <h2>🏆 选股筛选 TOP</h2>
+  <div id="screening-content"><p style="color:#8b949e">收盘后自动更新...</p></div>
+</div>
+
+<div class="section" id="ledger-section">
+  <h2>📋 经营账本</h2>
+  <div id="ledger-content"><p style="color:#8b949e">加载中...</p></div>
+</div>
+</div>
+
+<script>
+async function loadData() {
+  // 尝试加载各个数据文件
+  const files = [
+    { id: 'ledger-content', path: '../../ledger.md', type: 'raw' },
+  ];
+  
+  // 加载最新的市场简报
+  try {
+    const r = await fetch('dashboard_market.md?_=' + Date.now());
+    if (r.ok) {
+      const text = await r.text();
+      document.getElementById('market-content').innerHTML = 
+        '<pre style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + text.replace(/</g,'&lt;') + '</pre>';
+    }
+  } catch(e) { /* not found, ok */ }
+
+  // 尝试加载筛选报告
+  try {
+    const r = await fetch('dashboard_screening.md?_=' + Date.now());
+    if (r.ok) {
+      const text = await r.text();
+      document.getElementById('screening-content').innerHTML = 
+        '<pre style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + text.replace(/</g,'&lt;') + '</pre>';
+    }
+  } catch(e) { /* not found */ }
+
+  // 加载账本摘要
+  try {
+    const r = await fetch('../../ledger.md?_=' + Date.now());
+    if (r.ok) {
+      const text = await r.text();
+      document.getElementById('ledger-content').innerHTML = 
+        '<pre style="font-size:13px;line-height:1.6;white-space:pre-wrap">' + text.replace(/</g,'&lt;') + '</pre>';
+    }
+  } catch(e) { /* not found */ }
+  
+  document.getElementById('live-badge').textContent = '已加载 ✓';
+}
+
+loadData();
+</script>
+</body>
+</html>
