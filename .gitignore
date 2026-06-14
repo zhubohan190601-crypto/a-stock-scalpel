@@ -27,3 +27,5 @@ data/
 
 # 报告（clone 后自动生成）
 reports/
+venv/
+.env
