@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "a-stock-scalpel"
+version = "2.2.0"
+description = "A multi-factor quantitative analysis tool for China A-share short-term trading"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Scalpel Contributors"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "requests>=2.28",
+    "pandas>=1.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/zhubohan190601-crypto/a-stock-scalpel"
+Repository = "https://github.com/zhubohan190601-crypto/a-stock-scalpel"
+Issues = "https://github.com/zhubohan190601-crypto/a-stock-scalpel/issues"
+
+[project.scripts]
+ascalpel = "core.analyzer:main"
+
+[tool.setuptools.packages.find]
+include = ["core*"]

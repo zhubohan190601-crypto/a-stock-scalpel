@@ -1,135 +1,164 @@
 #!/usr/bin/env python3
 """
-阿不 金融数据分析引擎
-基于采集的行情数据做分析,产出投资参考信息
+a-stock-scalpel — 分析引擎
+==============================
+整合采集层 + 因子计算 + 规则评分
 """
 
-import json
-import os
 import sys
+import os
+import time
+import json
 from datetime import datetime
-from collections import defaultdict
 
-# 添加父目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from core.fetcher import fetch_batch, fetch_single, fetch_kline, save_snapshot, fetch_all_a_spot
+from core.fetcher import fetch_batch, fetch_kline, compute_all_factors
+from core.rules import score_factors, describe_signal
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
-REPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reports")
-os.makedirs(REPORT_DIR, exist_ok=True)
+# ── 股票池定义 ──
+STOCK_POOL = {
+    "金融": ["600036","601398","601939","601288","601328","601166","600030","601318","601211"],
+    "消费": ["600519","000858","000568","600809","600887","002714","000333","000651"],
+    "科技": ["002415","002475","002594","300750","300760","300124","002371","603501"],
+    "能源": ["601857","600028","600585","601088","601899","600900"],
+    "半导体": ["688981","688256","688036","688008","688012","002049"],
+    "医药": ["600276","300015","300759","000538"],
+    "通信": ["601728","600941","600050"],
+}
 
-def scan_market():
-    """扫描全市场,输出今日异动"""
-    codes = {
-        "龙头": ["000001","000002","000333","000651","000858","000568","000725","600519","600036","600900"],
-        "科技": ["002415","002475","002594","300750","300059","300760","688981","688256","688036","688008"],
-        "金融": ["600030","601318","601166","601398","601288","600036","601328","601939","601658","601728"],
-        "消费": ["600887","600809","600519","000858","000568","002714","600690"],
-        "能源": ["601857","600028","600585","601088","601899"],
-    }
+
+def run_scan(codes: list = None, show_progress: bool = True) -> list:
+    """
+    全量扫描: 获取实时价格 + K线 → 因子 → 规则评分
     
-    print("=" * 60)
-    print(f"📊 阿不 市场扫描 | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print("=" * 60)
+    返回: [{code, name, price, change_pct, score, signal, ...}, ...]
+    """
+    if codes is None:
+        codes = [c for cl in STOCK_POOL.values() for c in cl]
     
-    for sector, code_list in codes.items():
-        results = fetch_batch(code_list)
-        # 过滤有效数据
-        valid = [r for r in results if "error" not in r and "price" in r]
-        if not valid:
+    # 去重
+    codes = list(dict.fromkeys(codes))
+    
+    if show_progress:
+        print(f"\n🔍 A-Stock Scalpel 扫描 | {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        print(f"   候选池: {len(codes)} 只标的")
+        print("=" * 65)
+    
+    # 实时行情
+    quotes = fetch_batch(codes)
+    valid = [q for q in quotes if "error" not in q]
+    if show_progress:
+        print(f"   实时数据: {len(valid)}/{len(codes)} 有效")
+    
+    # K线 + 评分
+    results = []
+    for i, q in enumerate(valid):
+        code = q["code"]
+        kline = fetch_kline(code, scale="daily", datalen=65)
+        if not kline or len(kline) < 5:
+            if show_progress:
+                print(f"   [{i+1}/{len(valid)}] {code} — K线不足，跳过")
             continue
         
-        # 排序: 按涨跌幅
-        valid.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
+        factors = compute_all_factors(kline)
+        # 注入实时价格和涨跌幅
+        factors["price"] = q.get("price", factors.get("price", 0))
+        factors["change_pct"] = q.get("change_pct", factors.get("change_pct", 0))
         
-        gainers = [r for r in valid if r.get("change_pct", 0) > 2]
-        losers = [r for r in valid if r.get("change_pct", 0) < -2]
+        scores = score_factors(factors)
         
-        print(f"\n📍 {sector} ({len(valid)}只)")
-        if gainers:
-            for r in gainers[:3]:
-                print(f"   🔴 {r['name']}({r['code']}): {r['price']} +{r['change_pct']}%")
-        if losers:
-            for r in losers[:3]:
-                print(f"   🟢 {r['name']}({r['code']}): {r['price']} {r['change_pct']}%")
-        if not gainers and not losers:
-            top = valid[0]
-            bottom = valid[-1]
-            print(f"   最高: {top['name']} {top['price']} ({top['change_pct']}%)")
-            print(f"   最低: {bottom['name']} {bottom['price']} ({bottom['change_pct']}%)")
+        results.append({
+            "code": code,
+            "name": q.get("name", ""),
+            "price": q.get("price", 0),
+            "change_pct": q.get("change_pct", 0),
+            "amount_yi": q.get("amount_yi", 0),
+            **scores,
+        })
+        
+        if show_progress:
+            pct_str = f"{q.get('change_pct', 0):+.1f}%"
+            net_str = f"{scores['net_score']:+.0f}"
+            sig_str = scores["signal"]
+            print(f"   [{i+1}/{len(valid)}] {code} {q.get('name',''):<6} "
+                  f"¥{q.get('price',0):<8.2f} {pct_str:<6} "
+                  f"净{net_str} {sig_str}")
+        
+        time.sleep(0.3)  # 礼貌间隔
     
-    # 全市场扫描: 抓前20大成交额
-    print(f"\n{'=' * 60}")
-    print("💰 成交额TOP (估值)")
-    all_results = fetch_batch([
-        "000001","000002","000333","000651","000858","000568","000725","000063",
-        "002415","002714","002475","002594","300750","300059","300760","300124",
-        "600519","600036","600900","600276","600887","600030","601318","601166",
-        "601398","601288","601857","601988","600028","600585","601088","600690",
-        "601012","600809","601899","600406","600436","600309","600438","600196",
-        "688981","688256","688036","688008","601728","601658","601939","601328",
-    ])
-    valid_results = [r for r in all_results if "error" not in r and "amount_yi" in r]
-    valid_results.sort(key=lambda x: x.get("amount_yi", 0), reverse=True)
-    for r in valid_results[:10]:
-        print(f"  {r['name']}({r['code']}): ¥{r['amount_yi']}亿  {r.get('change_pct',0)}%")
+    # 按净分排序
+    results.sort(key=lambda r: r.get("net_score", 0), reverse=True)
+    return results
 
-def generate_daily_report():
-    """生成每日市场报告并保存"""
-    lines = []
-    lines.append("# 📊 阿不 每日市场简报")
-    lines.append(f"\n**日期**: {datetime.now().strftime('%Y-%m-%d')}")
-    lines.append(f"**时间**: {datetime.now().strftime('%H:%M')}")
-    lines.append("\n---\n")
+
+def print_summary(results: list, top_n: int = 20):
+    """打印扫描摘要"""
+    if not results:
+        print("\n❌ 无有效结果")
+        return
     
-    # 取关键标的
-    key_codes = {
-        "上证50": ["600519","600036","600900","601318","600030"],
-        "创业板": ["300750","300059","300760","300124"],
-        "科技": ["002415","002475","002594","688981","688256"],
-    }
+    print("\n" + "=" * 65)
+    print(f"🏆 综合评分 TOP {min(top_n, len(results))}")
+    print("=" * 65)
+    print(f"{'代码':>6} {'名称':<8} {'价格':>8} {'涨跌':>6} {'多':>3} {'空':>3} {'净分':>4} {'信号':<12}")
+    print("-" * 65)
     
-    for category, codes in key_codes.items():
-        results = fetch_batch(codes)
-        lines.append(f"## {category}\n")
-        lines.append("| 代码 | 名称 | 最新价 | 涨跌幅 | 成交额(亿) |")
-        lines.append("|------|------|--------|--------|-----------|")
-        for r in results:
-            if "error" not in r and "price" in r:
-                lines.append(f"| {r['code']} | {r['name']} | {r['price']} | {r.get('change_pct', 'N/A')}% | {r.get('amount_yi', 'N/A')} |")
-        lines.append("")
+    for s in results[:top_n]:
+        pct = f"{s['change_pct']:+.1f}%"
+        print(f"{s['code']:>6} {s['name']:<8} {s['price']:>8.2f} "
+              f"{pct:>6} {s['multi_hits']:>3} {s['short_hits']:>3} "
+              f"{s['net_score']:>+4.0f} {s['signal']:<12}")
     
-    # 异动提醒
-    lines.append("## ⚡ 今日异动\n")
-    all_results = fetch_batch([
-        "000333","000651","000858","000568","002415","002475","002594",
-        "300750","300059","600519","600036","600900","601318","600030",
-        "600887","600809","601857","600585","300124","688981",
-    ])
-    valid = [r for r in all_results if "error" not in r and "change_pct" in r]
-    big_movers = [r for r in valid if abs(r.get("change_pct", 0)) >= 3]
-    if big_movers:
-        big_movers.sort(key=lambda x: abs(x.get("change_pct", 0)), reverse=True)
-        for r in big_movers:
-            direction = "🔴" if r["change_pct"] > 0 else "🟢"
-            lines.append(f"- {direction} **{r['name']}({r['code']})**: {r['change_pct']}% (¥{r['price']})")
+    # 统计分布
+    signals = {}
+    for s in results:
+        signals[s["signal"]] = signals.get(s["signal"], 0) + 1
+    print(f"\n📊 信号分布: {signals}")
+    
+    # 强烈买入
+    strong_buys = [s for s in results if s["signal"] == "strong_buy"]
+    if strong_buys:
+        print(f"\n🔴 强烈买入 ({len(strong_buys)}):")
+        for s in strong_buys:
+            print(f"   {s['code']} {s['name']} — 净分{s['net_score']:+.0f} 命中{s['multi_hits']}条多头规则")
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="A-Stock Scalpel — 多因子短线评分系统")
+    parser.add_argument("--scan", action="store_true", help="全量扫描")
+    parser.add_argument("--top", type=int, default=20, help="显示前N只")
+    parser.add_argument("--json", action="store_true", help="JSON输出")
+    parser.add_argument("code", nargs="?", help="单只股票分析")
+    
+    args = parser.parse_args()
+    
+    if args.code:
+        # 单只
+        results = run_scan([args.code])
+        if results:
+            s = results[0]
+            print(f"\n{'='*50}")
+            print(f"{s['name']}({s['code']}) — {describe_signal(s['signal'])}")
+            print(f"{'='*50}")
+            print(f"  价格: ¥{s['price']:.2f}  ({s['change_pct']:+.1f}%)")
+            print(f"  多头命中: {s['multi_hits']}条  空头命中: {s['short_hits']}条")
+            print(f"  多头分: {s['multi_score']:.1f}%  空头分: {s['short_score']:.1f}%")
+            print(f"  净分: {s['net_score']:+.0f}")
+            if s.get("multi_rules"):
+                print(f"  多头规则: {', '.join(s['multi_rules'])}")
+            if s.get("short_rules"):
+                print(f"  空头规则: {', '.join(s['short_rules'])}")
+        else:
+            print(f"\n❌ {args.code} 分析失败")
+    elif args.scan:
+        results = run_scan()
+        print_summary(results, top_n=args.top)
+        if args.json:
+            print(json.dumps(results, ensure_ascii=False, indent=2))
     else:
-        lines.append("- 今日无明显异动(涨跌幅均<3%)\n")
-    
-    content = "\n".join(lines)
-    
-    filename = f"market_brief_{datetime.now().strftime('%Y%m%d')}.md"
-    filepath = os.path.join(REPORT_DIR, filename)
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write(content)
-    
-    print(f"✅ 报告已保存: {filepath}")
-    return filepath
+        parser.print_help()
+
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "--report":
-        generate_daily_report()
-    elif len(sys.argv) > 1 and sys.argv[1] == "--scan":
-        scan_market()
-    else:
-        print("用法: python3 analyzer.py [--scan | --report]")
+    main()
