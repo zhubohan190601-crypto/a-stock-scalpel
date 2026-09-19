@@ -5,7 +5,7 @@
   <p>
     <img src="https://img.shields.io/badge/python-3.9%2B-blue?style=flat-square" alt="Python">
     <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
-    <img src="https://img.shields.io/badge/version-2.2.0-orange?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/version-2.3.0-orange?style=flat-square" alt="Version">
     <img src="https://img.shields.io/badge/data-sina%20%7C%20eastmoney-yellow?style=flat-square" alt="Data Sources">
     <img src="https://img.shields.io/badge/status-beta-brightgreen?style=flat-square" alt="Status">
   </p>
@@ -35,6 +35,16 @@ A transparent, **deterministic** scoring system for China A-share short-term tra
 ### Why not AI black box?
 
 Most "AI trading" tools use LLMs to generate signals — you can't audit them. **A-Stock Scalpel** is different: every score is computed from a **deterministic rule table**. You can read `core/rules.py` and understand exactly why a stock scored what it did.
+
+## 🆕 What's New in v2.3
+
+- **Market Scan (`core/analyzer.py`)** — multi-source with fallback chain: Tencent sector board → Sina industry → explicit "data source unavailable" (no fake/cached output). Every call is logged (source / timestamp / row count) to `logs/analyzer_scan.log`.
+- **Bull/Bear Debate Engine (`core/debater.py`)** — Chrome-based data capture (Eastmoney F10 + Sina quotes) with a three-level fallback, plus optional Kronos factor integration.
+- **Deterministic Pick Archiving (`core/save_pick.py`)** — writes a Markdown report plus a JSONL record, so recommendations can be reviewed later.
+- **Forward Review (`core/pick_review.py`)** — computes N-day returns, max drawdown, stop/target hits and win rate for past recommendations from the archived records.
+- **Fundamental Screener (`core/screening_top10.py`)** — multi-condition screen (profit/revenue growth, R&D ratio, debt, PEG, trend breakout).
+- **Pre-market tolerance** — when live data is not yet available (before 09:15 auction), tools report *"no realtime data"* instead of printing `0`.
+- **Portable paths** — scripts resolve the project root from `ASTOCK_HOME` or the repository layout (no hard-coded absolute paths).
 
 ## ✨ Features
 

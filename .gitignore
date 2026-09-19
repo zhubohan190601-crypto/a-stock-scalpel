@@ -29,3 +29,6 @@ data/
 reports/
 venv/
 .env
+
+# local backups
+*.bak
