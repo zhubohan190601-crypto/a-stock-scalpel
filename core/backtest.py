@@ -21,7 +21,7 @@ from core.fetcher import fetch_kline, compute_all_factors
 from core.rules import score_factors
 
 TRADING_COST = 0.00457  # 0.457% 单边
-BENCHMARK_CODE = "510300"  # 沪深300ETF
+BENCHMARK_CODE = "159919"  # 沪深300ETF（深市；510300 经实测在现有数据接口取不到 K 线）
 
 
 def backtest_single(code: str, name: str = "", days: int = 120) -> dict:
@@ -38,12 +38,14 @@ def backtest_single(code: str, name: str = "", days: int = 120) -> dict:
     trades = []
     position = False
     entry_price = 0
-    total_return = 0
+    sum_ret = 0.0   # 各笔收益累加（用于每笔平均）；总收益由净值推导
     wins = 0
     losses = 0
     
-    # 净值序列（用于最大回撤计算）
-    nav_series = [1.0]
+    # 净值跟踪：nav = 已实现净值；navs = 每日净值序列（含未实现盯市）
+    nav = 1.0
+    navs = [1.0]
+    pos_return = 0.0
     
     for i in range(20, len(kline)):
         # 用第i天之前的全部数据计算因子
@@ -67,16 +69,17 @@ def backtest_single(code: str, name: str = "", days: int = 120) -> dict:
                 wins += 1
             else:
                 losses += 1
-            total_return += ret
+            sum_ret += ret
+            nav *= (1 + ret)   # 已实现收益入净值
             trades.append({"day": kline[i]["day"][:10], "action": "SELL",
                            "price": exit_price, "return": f"{ret*100:.2f}%"})
             position = False
         
-        # 记录每日净值（持仓时跟踪，空仓时不变）
+        # 每日净值：已实现净值 ×（持仓时叠加未实现盯市收益，不含费用）
         if position:
-            nav_series.append(nav_series[-1] * (1 + (current_price - entry_price) / entry_price))
+            navs.append(nav * (1 + (current_price - entry_price) / entry_price))
         else:
-            nav_series.append(nav_series[-1])
+            navs.append(nav)
     
     # 最后平仓
     if position and len(kline) > 0:
@@ -87,29 +90,37 @@ def backtest_single(code: str, name: str = "", days: int = 120) -> dict:
             wins += 1
         else:
             losses += 1
-        total_return += ret
+        sum_ret += ret
+        nav *= (1 + ret)
         trades.append({"day": kline[-1]["day"][:10], "action": "SELL(强制)",
                        "price": exit_price, "return": f"{ret*100:.2f}%"})
     
-    # 最大回撤
+    # 最大回撤（基于每日净值序列 navs）
     max_drawdown = 0.0
-    peak = nav_series[0]
-    for v in nav_series[1:]:
+    peak = navs[0]
+    for v in navs[1:]:
         if v > peak:
             peak = v
         dd = (peak - v) / peak
         if dd > max_drawdown:
             max_drawdown = dd
     
-    # 基准收益（沪深300 ETF 同期）
+    # 总收益（复利口径，与净值序列/回撤一致；不再用各笔简单加总）
+    total_return = nav - 1.0
+
+    # 基准收益（沪深300 ETF 同期）；取不到时明确标注，不静默返回 0
     benchmark_kline = fetch_kline(BENCHMARK_CODE, scale="daily", datalen=days + 30)
-    benchmark_return = 0.0
+    benchmark_return = None
+    benchmark_note = None
     if benchmark_kline and len(benchmark_kline) >= 2:
         b_start = benchmark_kline[0]["close"]
         b_end = benchmark_kline[-1]["close"]
-        benchmark_return = (b_end - b_start) / b_start if b_start > 0 else 0
-    
-    excess_return = total_return - benchmark_return
+        if b_start > 0:
+            benchmark_return = (b_end - b_start) / b_start
+    if benchmark_return is None:
+        benchmark_note = f"基准数据获取失败（{BENCHMARK_CODE}），基准/超额收益不可用"
+
+    excess_return = (total_return - benchmark_return) if benchmark_return is not None else None
     
     total_trades = wins + losses
     win_rate = wins / total_trades * 100 if total_trades > 0 else 0
@@ -122,10 +133,11 @@ def backtest_single(code: str, name: str = "", days: int = 120) -> dict:
         "losses": losses,
         "win_rate": f"{win_rate:.1f}%",
         "total_return": f"{total_return*100:.2f}%",
-        "avg_return_per_trade": f"{total_return/max(total_trades,1)*100:.2f}%",
+        "avg_return_per_trade": f"{sum_ret/max(total_trades,1)*100:.2f}%",
         "max_drawdown": f"{max_drawdown*100:.2f}%",
-        "excess_return": f"{excess_return*100:.2f}%",
-        "benchmark_return": f"{benchmark_return*100:.2f}%",
+        "excess_return": f"{excess_return*100:.2f}%" if excess_return is not None else "N/A",
+        "benchmark_return": f"{benchmark_return*100:.2f}%" if benchmark_return is not None else "N/A",
+        "benchmark_note": benchmark_note,
         "trades_detail": trades,
     }
 
