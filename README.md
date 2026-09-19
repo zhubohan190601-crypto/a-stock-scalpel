@@ -17,6 +17,12 @@
   <hr>
 </div>
 
+> ⚠️ **免责声明 / Disclaimer**
+>
+> 本项目仅用于技术研究与学习交流，**所有输出不构成任何投资建议**。使用者需自行承担投资决策风险。
+>
+> This project is for technical research and educational purposes only. **Nothing it outputs constitutes investment advice.** Users bear all risks of their own investment decisions.
+
 ## 🎯 What is A-Stock Scalpel?
 
 A transparent, **deterministic** scoring system for China A-share short-term trading signals. It uses 9 technical factors (RSI, MACD, KDJ, Bollinger, Ichimoku, Alligator, ADX, OBV, Volume) evaluated against **18 bullish + 14 bearish rules** to produce a net score and actionable signal.
