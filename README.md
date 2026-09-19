@@ -52,6 +52,10 @@ Most "AI trading" tools use LLMs to generate signals — you can't audit them. *
 - **Pre-market tolerance** — when live data is not yet available (before 09:15 auction), tools report *"no realtime data"* instead of printing `0`.
 - **Portable paths** — scripts resolve the project root from `ASTOCK_HOME` or the repository layout (no hard-coded absolute paths).
 
+> **Not included / 未包含**：TimesFM 指数风险区间组件不在本仓库中 —— 其预训练 3.0 权重以**非商用许可**分发（仅 2.5 及以前版本为 Apache-2.0），且依赖独立运行时环境（mlx/torch）。
+>
+> The TimesFM index risk-range component is intentionally **not included**: its pretrained 3.0 weights ship under a **non-commercial licence** (only 2.5 and earlier are Apache-2.0) and require a separate runtime (mlx/torch).
+
 ## ✨ Features
 
 | Feature | Detail |
